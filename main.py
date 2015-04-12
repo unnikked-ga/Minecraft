@@ -1,6 +1,7 @@
 import math
 import random
 import time
+import copy
 
 from collections import deque
 from pyglet import image
@@ -8,7 +9,7 @@ from pyglet.gl import *
 from pyglet.graphics import TextureGroup
 from pyglet.window import key, mouse
 
-TICKS_PER_SEC = 60
+TICKS_PER_SEC = 20
 
 # Size of sectors used to ease block loading.
 SECTOR_SIZE = 16
@@ -16,7 +17,7 @@ SECTOR_SIZE = 16
 WALKING_SPEED = 5
 FLYING_SPEED = 15
 
-GRAVITY = 20.0
+GRAVITY = 20
 MAX_JUMP_HEIGHT = 1.0 # About the height of a block.
 # To derive the formula for calculating jump speed, first solve
 #    v_t = v_0 + a * t
@@ -74,6 +75,10 @@ GRASS = tex_coords((1, 0), (0, 1), (0, 0))
 SAND = tex_coords((1, 1), (1, 1), (1, 1))
 BRICK = tex_coords((2, 0), (2, 0), (2, 0))
 STONE = tex_coords((2, 1), (2, 1), (2, 1))
+
+CONDUCTOR = tex_coords((3, 1), (3, 1), (3, 1))
+ELECTRON_HEAD = tex_coords((3, 0), (3, 0), (3, 0))
+ELECTRON_TAIL = tex_coords((3, 2), (3, 2), (3, 2))
 
 FACES = [
     ( 0, 1, 0),
@@ -133,6 +138,8 @@ class Model(object):
         # A mapping from position to the texture of the block at that position.
         # This defines all the blocks that are currently in the world.
         self.world = {}
+        
+        self.wWorld = {}
 
         # Same mapping as `world` but only contains blocks that are shown.
         self.shown = {}
@@ -153,7 +160,7 @@ class Model(object):
         """ Initialize the world by placing all the blocks.
 
         """
-        n = 80  # 1/2 width and height of world
+        n = 20  # 1/2 width and height of world
         s = 1  # step size
         y = 0  # initial y height
         for x in xrange(-n, n + 1, s):
@@ -164,27 +171,27 @@ class Model(object):
                 if x in (-n, n) or z in (-n, n):
                     # create outer walls.
                     for dy in xrange(-2, 3):
-                        self.add_block((x, y + dy, z), STONE, immediate=False)
+                        self.add_block((x, y + dy, z), STONE)#, immediate=False)
 
         # generate the hills randomly
-        o = n - 10
-        for _ in xrange(120):
-            a = random.randint(-o, o)  # x position of the hill
-            b = random.randint(-o, o)  # z position of the hill
-            c = -1  # base of the hill
-            h = random.randint(1, 6)  # height of the hill
-            s = random.randint(4, 8)  # 2 * s is the side length of the hill
-            d = 1  # how quickly to taper off the hills
-            t = random.choice([GRASS, SAND, BRICK])
-            for y in xrange(c, c + h):
-                for x in xrange(a - s, a + s + 1):
-                    for z in xrange(b - s, b + s + 1):
-                        if (x - a) ** 2 + (z - b) ** 2 > (s + 1) ** 2:
-                            continue
-                        if (x - 0) ** 2 + (z - 0) ** 2 < 5 ** 2:
-                            continue
-                        self.add_block((x, y, z), t, immediate=False)
-                s -= d  # decrement side lenth so hills taper off
+        # o = n - 10
+        # for _ in xrange(120):
+        #     a = random.randint(-o, o)  # x position of the hill
+        #     b = random.randint(-o, o)  # z position of the hill
+        #     c = -1  # base of the hill
+        #     h = random.randint(1, 6)  # height of the hill
+        #     s = random.randint(4, 8)  # 2 * s is the side length of the hill
+        #     d = 1  # how quickly to taper off the hills
+        #     t = random.choice([GRASS, SAND, BRICK])
+        #     for y in xrange(c, c + h):
+        #         for x in xrange(a - s, a + s + 1):
+        #             for z in xrange(b - s, b + s + 1):
+        #                 if (x - a) ** 2 + (z - b) ** 2 > (s + 1) ** 2:
+        #                     continue
+        #                 if (x - 0) ** 2 + (z - 0) ** 2 < 5 ** 2:
+        #                     continue
+        #                 self.add_block((x, y, z), t, immediate=False)
+        #         s -= d  # decrement side lenth so hills taper off
 
     def hit_test(self, position, vector, max_distance=8):
         """ Line of sight search from current position. If a block is
@@ -240,6 +247,14 @@ class Model(object):
         """
         if position in self.world:
             self.remove_block(position, immediate)
+
+        if texture is CONDUCTOR:
+            self.wWorld[position] = texture
+        if texture is ELECTRON_HEAD:
+            self.wWorld[position] = texture
+        if texture is ELECTRON_TAIL:
+            self.wWorld[position] = texture
+
         self.world[position] = texture
         self.sectors.setdefault(sectorize(position), []).append(position)
         if immediate:
@@ -258,6 +273,9 @@ class Model(object):
             Whether or not to immediately remove block from canvas.
 
         """
+        if position in self.wWorld:
+            del self.wWorld[position]
+        
         del self.world[position]
         self.sectors[sectorize(position)].remove(position)
         if immediate:
@@ -423,7 +441,39 @@ class Model(object):
         """
         while self.queue:
             self._dequeue()
+            
+    def wireworld(self, position, texture):
+        # Wireworld
+        x, y, z = position
 
+
+        texture = self.world[position]
+
+        if texture is CONDUCTOR:
+            count = 0
+            for dx in [-1, 0, 1]:
+                for dy in [-1, 0, 1]:
+                    for dz in [-1, 0, 1]:
+                        key = (x + dx, y + dy, z + dz)
+                        if key in self.world:
+                            if self.world[key] is ELECTRON_HEAD:
+                                count += 1
+            if 1 <= count <= 2 and count != 0:
+                self._enqueue(self.add_block, (x, y, z), ELECTRON_HEAD)
+            return
+                
+        if texture is ELECTRON_HEAD:
+            self._enqueue(self.add_block, (x, y, z), ELECTRON_TAIL)
+            return
+                        
+
+        if texture is ELECTRON_TAIL:
+            self._enqueue(self.add_block, (x, y, z), CONDUCTOR)
+            return
+            
+    def wTick(self):
+        for position in self.wWorld:
+            self.wireworld(position, self.wWorld[position])
 
 class Window(pyglet.window.Window):
 
@@ -434,7 +484,7 @@ class Window(pyglet.window.Window):
         self.exclusive = False
 
         # When flying gravity has no effect and speed is increased.
-        self.flying = False
+        self.flying = True
 
         # Strafing is moving lateral to the direction you are facing,
         # e.g. moving to the left or right while continuing to face forward.
@@ -466,7 +516,7 @@ class Window(pyglet.window.Window):
         self.dy = 0
 
         # A list of blocks the player can place. Hit num keys to cycle.
-        self.inventory = [BRICK, GRASS, SAND]
+        self.inventory = [BRICK, GRASS, SAND, CONDUCTOR, ELECTRON_HEAD, ELECTRON_TAIL]
 
         # The current block the user can place. Hit num keys to cycle.
         self.block = self.inventory[0]
@@ -478,6 +528,9 @@ class Window(pyglet.window.Window):
 
         # Instance of the model that handles the world.
         self.model = Model()
+        
+        # Wireworld tick
+        self.wTick = False
 
         # The label that is displayed in the top left of the canvas.
         self.label = pyglet.text.Label('', font_name='Arial', font_size=18,
@@ -562,6 +615,9 @@ class Window(pyglet.window.Window):
             The change in time since the last call.
 
         """
+        if self.wTick is True:
+            self.model.wTick()
+        
         self.model.process_queue()
         sector = sectorize(self.position)
         if sector != self.sector:
@@ -602,6 +658,7 @@ class Window(pyglet.window.Window):
         x, y, z = self.position
         x, y, z = self.collide((x + dx, y + dy, z + dz), PLAYER_HEIGHT)
         self.position = (x, y, z)
+
 
     def collide(self, position, height):
         """ Checks to see if the player at the given `position` and `height`
@@ -720,6 +777,8 @@ class Window(pyglet.window.Window):
             self.strafe[1] -= 1
         elif symbol == key.D:
             self.strafe[1] += 1
+        elif symbol == key.T:
+            self.wTick = not self.wTick
         elif symbol == key.SPACE:
             if self.dy == 0:
                 self.dy = JUMP_SPEED
