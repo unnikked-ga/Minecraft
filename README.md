@@ -1,6 +1,8 @@
 # Minecraft
 
-Simple Minecraft-inspired demo written in Python and Pyglet.
+Simple Minecraft-inspired demo written in Python and Pyglet that implements the Wireworld cellular automaton.
+
+![Wireworl 3D](http://i.imgur.com/TAE0hRx.png)
 
 http://www.youtube.com/watch?v=kC3lwK631X8
 
@@ -77,6 +79,7 @@ See the [wiki](https://github.com/fogleman/Minecraft/wiki) for this project to i
 - S: back
 - A: strafe left
 - D: strafe right
+- T: start simulation
 - Mouse: look around
 - Space: jump
 - Tab: toggle flying mode
@@ -87,6 +90,9 @@ See the [wiki](https://github.com/fogleman/Minecraft/wiki) for this project to i
     - 1: brick
     - 2: grass
     - 3: sand
+    - 4: conductor
+    - 5: electron head
+    - 6: electron tail
 - Mouse left-click: remove block
 - Mouse right-click: create block
 
